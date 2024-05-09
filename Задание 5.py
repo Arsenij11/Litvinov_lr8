@@ -1,54 +1,77 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
 import time
+import sklearn.datasets
+from sklearn.model_selection import train_test_split
+from torch.utils.data import TensorDataset, DataLoader
+import matplotlib.pyplot as plt
 
+# Загрузка данных
+wine = sklearn.datasets.load_wine()
+wine_data = wine.data[:, :2]  # Берем только первые два признака для простоты
+wine_target = wine.target
 
-# Создаем простую нейронную сеть
-class SimpleNN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(SimpleNN, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_size, output_size)
+# Преобразование данных в тензоры PyTorch
+X = torch.FloatTensor(wine_data)
+y = torch.LongTensor(wine_target)
+
+# Разделение данных на тренировочный и тестовый наборы
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# Определение модели
+class WineNet(torch.nn.Module):
+    def __init__(self):
+        super(WineNet, self).__init__()
+        self.fc1 = torch.nn.Linear(2, 40)
+        self.activ1 = torch.nn.ReLU()
+        self.fc2 = torch.nn.Linear(40, 40)
+        self.activ2 = torch.nn.ReLU()
+        self.fc3 = torch.nn.Linear(40, 3)
+        self.sm = torch.nn.Softmax(dim=1)
 
     def forward(self, x):
         x = self.fc1(x)
-        x = self.relu(x)
+        x = self.activ1(x)
         x = self.fc2(x)
+        x = self.activ2(x)
+        x = self.fc3(x)
         return x
 
+# Список размеров батчей для исследования
+batch_sizes = [2, 4, 8, 16, 32, 64, 128]
 
-# Генерируем случайные данные для обучения
-input_size = 10
-output_size = 1
-num_samples = 1000
-X_train = torch.randn(num_samples, input_size)
-y_train = torch.randn(num_samples, output_size)
+# Словарь для сохранения времени обучения для каждого размера батча
+training_times = {}
 
-# Создаем DataLoader для обучения сети
-dataset = TensorDataset(X_train, y_train)
-
-# Задаем разные размеры батча для исследования
-batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128]
-
-# Исследуем зависимость времени обучения от размера батча
 for batch_size in batch_sizes:
-    print(f'Training with batch size: {batch_size}')
-    train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # Создание DataLoader для обучения с текущим размером батча
+    train_dataset = TensorDataset(X_train, y_train)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    model = SimpleNN(input_size, 40, output_size)
-    criterion = nn.MSELoss()
-    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    # Инициализация модели
+    wine_net = WineNet()
 
+    # Определение функции потерь и оптимизатора
+    loss_function = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(wine_net.parameters(), lr=0.01)
+
+    # Обучение модели
     start_time = time.time()
     for epoch in range(100):
-        for inputs, targets in train_loader:
+        for inputs, labels in train_loader:
             optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            outputs = wine_net(inputs)
+            loss = loss_function(outputs, labels)
             loss.backward()
             optimizer.step()
     end_time = time.time()
-    print(f'Time taken: {end_time - start_time} seconds')
+
+    # Сохранение времени обучения
+    training_times[batch_size] = end_time - start_time
+
+# Построение графика зависимости времени обучения от размера батча
+plt.plot(list(training_times.keys()), list(training_times.values()), marker='o')
+plt.title('Зависимость времени обучения от размера батча')
+plt.xlabel('Размер батча')
+plt.ylabel('Время обучения (сек)')
+plt.grid(True)
+plt.savefig('График_зависимости_времени_обучения_от_размера_батча.png')
